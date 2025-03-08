@@ -3,8 +3,12 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/xml"
 	"fmt"
+	"html"
 	"internal/config"
+	"io"
+	"net/http"
 	"os"
 	"time"
 
@@ -55,7 +59,7 @@ func loginHandler(s *state, cmd command) error {
 
 	name := cmd.Args[0]
 
-	user, err := s.db.GetUser(context.Background(), name)
+	user, err := s.db.GetUserByName(context.Background(), name)
 	if err != nil {
 		return err
 	}
@@ -144,6 +148,150 @@ func registerHandler(s *state, cmd command) error {
 	return nil
 }
 
+func addFeedHandler(s *state, cmd command) error {
+	// Check if the command is "register"
+	if cmd.Command != "addfeed" {
+		return fmt.Errorf("invalid command")
+	}
+
+	// Check if the arguments are valid
+	if len(cmd.Args) < 2 {
+		return fmt.Errorf("missing name/url arguments")
+	}
+
+	name := cmd.Args[0]
+	url := cmd.Args[1]
+
+	// get current user from db by name
+	user, err := s.db.GetUserByName(context.Background(), s.Config.User)
+	if err != nil {
+		return err
+	}
+
+	// add feed ti database
+	feed, err := s.db.CreateFeed(context.Background(), database.CreateFeedParams{
+		ID:        uuid.New(),
+		Name:      name,
+		Url:       url,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		UserID:    user.ID,
+	})
+
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Feed %s added successfully\n", feed)
+
+	return nil
+}
+
+func listFeedsHandler(s *state, cmd command) error {
+	// Check if the command is "register"
+	if cmd.Command != "feeds" {
+		return fmt.Errorf("invalid command")
+	}
+
+	// get current user from db by name
+	feeds, err := s.db.GetFeeds(context.Background())
+	if err != nil {
+		return err
+	}
+
+	for _, feed := range feeds {
+		// get feed from db by name
+		fmt.Printf("* %s, ", feed.Name)
+		fmt.Printf("  %s, ", feed.Url)
+
+		user, err := s.db.GetUserById(context.Background(), feed.UserID)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("%s \n", user.Name)
+	}
+
+	return nil
+}
+
+type RSSFeed struct {
+	Channel struct {
+		Title       string    `xml:"title"`
+		Link        string    `xml:"link"`
+		Description string    `xml:"description"`
+		Item        []RSSItem `xml:"item"`
+	} `xml:"channel"`
+}
+
+type RSSItem struct {
+	Title       string `xml:"title"`
+	Link        string `xml:"link"`
+	Description string `xml:"description"`
+	PubDate     string `xml:"pubDate"`
+}
+
+func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	client := &http.Client{}
+	r.Header.Set("User-Agent", "gator")
+	resp, err := client.Do(r)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch feed: %s", resp.Status)
+	}
+
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	var feed RSSFeed
+
+	if err := xml.Unmarshal(b, &feed); err != nil {
+		return nil, err
+	}
+
+	// unescape html strings
+	feed.Channel.Title = html.UnescapeString(feed.Channel.Title)
+	feed.Channel.Description = html.UnescapeString(feed.Channel.Description)
+	for i := range feed.Channel.Item {
+		feed.Channel.Item[i].Title = html.UnescapeString(feed.Channel.Item[i].Title)
+		feed.Channel.Item[i].Description = html.UnescapeString(feed.Channel.Item[i].Description)
+	}
+
+	return &feed, nil
+}
+
+func aggregationHandler(s *state, cmd command) error {
+	// Check if the command is "register"
+	if cmd.Command != "agg" {
+		return fmt.Errorf("invalid command")
+	}
+
+	// Check if the arguments are valid
+	// if len(cmd.Args) < 1 {
+	// 	return fmt.Errorf("missing name arguments")
+	// }
+
+	// name := cmd.Args[0]
+	url := "https://www.wagslane.dev/index.xml"
+
+	feed, err := fetchFeed(context.Background(), url)
+	if err != nil {
+		return err
+	}
+
+	// Print entire feed struct
+	fmt.Printf("Feed: %+v\n", feed)
+
+	return nil
+}
+
 func main() {
 	cfg, err := config.Read()
 	if err != nil {
@@ -168,6 +316,9 @@ func main() {
 	commands.register("register", registerHandler)
 	commands.register("reset", resetHandler)
 	commands.register("users", listUsersHandler)
+	commands.register("agg", aggregationHandler)
+	commands.register("addfeed", addFeedHandler)
+	commands.register("feeds", listFeedsHandler)
 
 	args := os.Args
 	if len(args) < 2 {

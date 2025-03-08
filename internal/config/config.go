@@ -27,7 +27,7 @@ func Read() (Config, error) {
 		return Config{}, err
 	}
 	file, _ := os.ReadFile(fp)
-	fmt.Printf("Raw file content: %s\n", file)
+	// fmt.Printf("Raw file content: %s\n", file)
 	_ = json.Unmarshal([]byte(file), &cfg)
 	return cfg, nil
 }
