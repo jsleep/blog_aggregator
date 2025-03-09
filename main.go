@@ -148,7 +148,7 @@ func registerHandler(s *state, cmd command) error {
 	return nil
 }
 
-func addFeedHandler(s *state, cmd command) error {
+func addFeedHandler(s *state, cmd command, user database.User) error {
 	// Check if the command is "register"
 	if cmd.Command != "addfeed" {
 		return fmt.Errorf("invalid command")
@@ -161,12 +161,6 @@ func addFeedHandler(s *state, cmd command) error {
 
 	name := cmd.Args[0]
 	url := cmd.Args[1]
-
-	// get current user from db by name
-	user, err := s.db.GetUserByName(context.Background(), s.Config.User)
-	if err != nil {
-		return err
-	}
 
 	// add feed ti database
 	feed, err := s.db.CreateFeed(context.Background(), database.CreateFeedParams{
@@ -198,7 +192,7 @@ func addFeedHandler(s *state, cmd command) error {
 	return nil
 }
 
-func followHandler(s *state, cmd command) error {
+func followHandler(s *state, cmd command, user database.User) error {
 	// Check if the command is "register"
 	if cmd.Command != "follow" {
 		return fmt.Errorf("invalid command")
@@ -210,12 +204,6 @@ func followHandler(s *state, cmd command) error {
 	}
 
 	url := cmd.Args[0]
-
-	// get current user from db by name
-	user, err := s.db.GetUserByName(context.Background(), s.Config.User)
-	if err != nil {
-		return err
-	}
 
 	feed, err := s.db.GetFeed(context.Background(), url)
 	if err != nil {
@@ -239,16 +227,10 @@ func followHandler(s *state, cmd command) error {
 	return nil
 }
 
-func followingHandler(s *state, cmd command) error {
+func followingHandler(s *state, cmd command, user database.User) error {
 	// Check if the command is "register"
 	if cmd.Command != "following" {
 		return fmt.Errorf("invalid command")
-	}
-
-	// get current user from db by name
-	user, err := s.db.GetUserByName(context.Background(), s.Config.User)
-	if err != nil {
-		return err
 	}
 
 	// get current user from db by name
@@ -371,6 +353,18 @@ func aggregationHandler(s *state, cmd command) error {
 	return nil
 }
 
+func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(*state, command) error {
+	return func(s *state, cmd command) error {
+
+		user, err := s.db.GetUserByName(context.Background(), s.Config.User)
+		if err != nil {
+			return err
+		}
+
+		return handler(s, cmd, user)
+	}
+}
+
 func main() {
 	cfg, err := config.Read()
 	if err != nil {
@@ -396,10 +390,10 @@ func main() {
 	commands.register("reset", resetHandler)
 	commands.register("users", listUsersHandler)
 	commands.register("agg", aggregationHandler)
-	commands.register("addfeed", addFeedHandler)
+	commands.register("addfeed", middlewareLoggedIn(addFeedHandler))
 	commands.register("feeds", listFeedsHandler)
-	commands.register("follow", followHandler)
-	commands.register("following", followingHandler)
+	commands.register("follow", middlewareLoggedIn(followHandler))
+	commands.register("following", middlewareLoggedIn(followingHandler))
 
 	args := os.Args
 	if len(args) < 2 {
