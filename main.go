@@ -182,6 +182,17 @@ func addFeedHandler(s *state, cmd command) error {
 		return err
 	}
 
+	// current user should follow feed they just added
+	_, err = s.db.CreateFeedFollow(context.Background(), database.CreateFeedFollowParams{
+		ID:        uuid.New(),
+		UserID:    user.ID,
+		FeedID:    feed.ID,
+		CreatedAt: time.Now(),
+	})
+	if err != nil {
+		return err
+	}
+
 	fmt.Printf("Feed %s added successfully\n", feed)
 
 	return nil
@@ -225,6 +236,33 @@ func followHandler(s *state, cmd command) error {
 
 	fmt.Printf(" User %s followed feed %s successfully\n", user.Name, feed.Name)
 
+	return nil
+}
+
+func followingHandler(s *state, cmd command) error {
+	// Check if the command is "register"
+	if cmd.Command != "following" {
+		return fmt.Errorf("invalid command")
+	}
+
+	// get current user from db by name
+	user, err := s.db.GetUserByName(context.Background(), s.Config.User)
+	if err != nil {
+		return err
+	}
+
+	// get current user from db by name
+	follows, err := s.db.GetFeedFollowsForUser(context.Background(), user.ID)
+
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("User %s follows:\n", user.Name)
+
+	for _, follow := range follows {
+		fmt.Printf("* %s\n", follow.FeedName)
+	}
 	return nil
 }
 
@@ -361,6 +399,7 @@ func main() {
 	commands.register("addfeed", addFeedHandler)
 	commands.register("feeds", listFeedsHandler)
 	commands.register("follow", followHandler)
+	commands.register("following", followingHandler)
 
 	args := os.Args
 	if len(args) < 2 {
