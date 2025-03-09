@@ -187,6 +187,47 @@ func addFeedHandler(s *state, cmd command) error {
 	return nil
 }
 
+func followHandler(s *state, cmd command) error {
+	// Check if the command is "register"
+	if cmd.Command != "follow" {
+		return fmt.Errorf("invalid command")
+	}
+
+	// Check if the arguments are valid
+	if len(cmd.Args) < 1 {
+		return fmt.Errorf("missing url arg")
+	}
+
+	url := cmd.Args[0]
+
+	// get current user from db by name
+	user, err := s.db.GetUserByName(context.Background(), s.Config.User)
+	if err != nil {
+		return err
+	}
+
+	feed, err := s.db.GetFeed(context.Background(), url)
+	if err != nil {
+		return err
+	}
+
+	// get current user from db by name
+	_, err = s.db.CreateFeedFollow(context.Background(), database.CreateFeedFollowParams{
+		ID:        uuid.New(),
+		UserID:    user.ID,
+		FeedID:    feed.ID,
+		CreatedAt: time.Now(),
+	})
+
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf(" User %s followed feed %s successfully\n", user.Name, feed.Name)
+
+	return nil
+}
+
 func listFeedsHandler(s *state, cmd command) error {
 	// Check if the command is "register"
 	if cmd.Command != "feeds" {
@@ -319,6 +360,7 @@ func main() {
 	commands.register("agg", aggregationHandler)
 	commands.register("addfeed", addFeedHandler)
 	commands.register("feeds", listFeedsHandler)
+	commands.register("follow", followHandler)
 
 	args := os.Args
 	if len(args) < 2 {
