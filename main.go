@@ -307,6 +307,32 @@ func listFeedsHandler(s *state, cmd command) error {
 	return nil
 }
 
+func scrapeFeeds(s *state) error {
+	next_feed, err := s.db.GetNextFeedToFetch(context.Background())
+	if err != nil {
+		panic(err)
+	}
+
+	s.db.MarkFeedFetched(context.Background(), database.MarkFeedFetchedParams{
+		ID:            next_feed.ID,
+		LastFetchedAt: sql.NullTime{Time: time.Now(), Valid: true},
+	})
+
+	fmt.Printf("Fetched feed %s at %s\n", next_feed.Name, time.Now().Format(time.RFC3339))
+
+	feed, err := fetchFeed(context.Background(), next_feed.Url)
+	if err != nil {
+		panic(err)
+	}
+
+	// Print entire feed struct
+	for _, item := range feed.Channel.Item {
+		fmt.Printf("* Item: %s\n", item.Title)
+	}
+
+	return nil
+}
+
 type RSSFeed struct {
 	Channel struct {
 		Title       string    `xml:"title"`
@@ -367,22 +393,20 @@ func aggregationHandler(s *state, cmd command) error {
 	}
 
 	// Check if the arguments are valid
-	// if len(cmd.Args) < 1 {
-	// 	return fmt.Errorf("missing name arguments")
-	// }
-
-	// name := cmd.Args[0]
-	url := "https://www.wagslane.dev/index.xml"
-
-	feed, err := fetchFeed(context.Background(), url)
-	if err != nil {
-		return err
+	if len(cmd.Args) < 1 {
+		return fmt.Errorf("missing duration arguments")
 	}
 
-	// Print entire feed struct
-	fmt.Printf("Feed: %+v\n", feed)
+	// name := cmd.Args[0]
+	time_between_reqs, err := time.ParseDuration(cmd.Args[0])
+	if err != nil {
+		return fmt.Errorf("invalid duration: %v", err)
+	}
 
-	return nil
+	ticker := time.NewTicker(time_between_reqs)
+	for ; ; <-ticker.C {
+		scrapeFeeds(s)
+	}
 }
 
 func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(*state, command) error {
