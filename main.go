@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -327,7 +328,31 @@ func scrapeFeeds(s *state) error {
 
 	// Print entire feed struct
 	for _, item := range feed.Channel.Item {
-		fmt.Printf("* Item: %s\n", item.Title)
+		fmt.Printf("* Item: %s", item.Title)
+		fmt.Printf(", Time: %s\n", item.PubDate)
+		parseTime, err := parseTime(item.PubDate)
+		if err != nil {
+			fmt.Printf("Error parsing time: %v\n", err)
+			continue
+		}
+
+		post, err := s.db.CreatePost(context.Background(), database.CreatePostParams{
+			ID:          uuid.New(),
+			FeedID:      next_feed.ID,
+			Title:       item.Title,
+			Url:         item.Link,
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+			Description: item.Description,
+			PublishedAt: parseTime,
+		})
+
+		if err != nil {
+			fmt.Printf("Error creating post: %v\n", err)
+			continue
+		} else {
+			fmt.Printf("Post created: %s %s\n", post.Title, post.Url)
+		}
 	}
 
 	return nil
@@ -409,6 +434,63 @@ func aggregationHandler(s *state, cmd command) error {
 	}
 }
 
+func browseHandler(s *state, cmd command, user database.User) error {
+	// Check if the command is "register"
+	if cmd.Command != "browse" {
+		return fmt.Errorf("invalid command")
+	}
+
+	var limit int = 2
+	var err error
+
+	// Check if the arguments are valid
+	if len(cmd.Args) >= 1 {
+		limit, err = strconv.Atoi(cmd.Args[0])
+		if err != nil {
+			return err
+		}
+	}
+
+	// name := cmd.Args[0]
+
+	posts, err := s.db.GetPostsForUser(context.Background(), database.GetPostsForUserParams{UserID: user.ID, Limit: int32(limit)})
+	if err != nil {
+		return err
+	}
+
+	for _, post := range posts {
+		fmt.Printf("* %s, ", post.Title)
+		fmt.Printf("  %s, ", post.Url)
+		fmt.Printf("%s \n", post.PublishedAt.Format(time.RFC3339))
+	}
+	return nil
+}
+
+func parseTime(timeStr string) (time.Time, error) {
+	// Try a few common formats
+	formats := []string{
+		time.RFC1123Z,
+		time.RFC1123,
+		time.RFC3339,
+		"2006-01-02T15:04:05Z",
+		"Mon, 02 Jan 2006 15:04:05 -0700",
+		// Add more formats as needed
+	}
+
+	var t time.Time
+	var err error
+
+	for _, format := range formats {
+		t, err = time.Parse(format, timeStr)
+		if err == nil {
+			return t, nil
+		}
+	}
+
+	// If we get here, none of our formats worked
+	return time.Time{}, fmt.Errorf("could not parse time: %s", timeStr)
+}
+
 func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(*state, command) error {
 	return func(s *state, cmd command) error {
 
@@ -451,6 +533,7 @@ func main() {
 	commands.register("follow", middlewareLoggedIn(followHandler))
 	commands.register("following", middlewareLoggedIn(followingHandler))
 	commands.register("unfollow", middlewareLoggedIn(unfollowHandler))
+	commands.register("browse", middlewareLoggedIn(browseHandler))
 
 	args := os.Args
 	if len(args) < 2 {
