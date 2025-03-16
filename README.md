@@ -16,8 +16,12 @@ echo '{"db_url":"postgres://postgres:postgres@localhost:5432/gator?sslmode=disab
 
 * create database:
 ```bash
-psql --version
+psql
 CREATE DATABASE gator;
+```
+
+* create tables via goose migration
+```bash
 cd sql/schema
 goose postgres postgres://postgres:postgres@localhost:5432/gator up
 cd ../..
