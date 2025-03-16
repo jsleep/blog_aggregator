@@ -10,7 +10,7 @@ boot.dev project for learning SQL+Go
 
 ## usage
 * create config:
-```
+```bash
 echo '{"db_url":"postgres://postgres:postgres@localhost:5432/gator?sslmode=disable","user":"me"}' > ~/.gatorconfig.json
 ```
 
@@ -24,7 +24,7 @@ cd ../..
 ```
 
 * run gator
-```
+```bash
 go run . register me
 go run . addfeed "Lanes Blog" "https://www.wagslane.dev/index.xml"
 go run . addfeed "Hacker News RSS" "https://hnrss.org/newest"
